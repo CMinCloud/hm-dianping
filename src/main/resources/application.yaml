@@ -1,0 +1,37 @@
+server:
+  port: 8081
+spring:
+  application:
+    name: hmdp
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://127.0.0.1:3306/remark_db?useSSL=false&serverTimezone=UTC
+    username: root
+    password: 403630
+  redis:
+    host: 47.109.59.20
+    port: 6379
+    password: 403630
+    lettuce:
+      pool:
+        max-active: 10  #线程池最大数目
+        max-idle: 10  #最大运行线程数
+        min-idle: 1   #最小运行线程数
+        time-between-eviction-runs: 10s   #响应等待时间
+    jedis:
+      pool:
+        max-active: 10  #线程池最大数目
+        max-idle: 10  #最大运行线程数
+        min-idle: 1   #最小运行线程数
+        time-between-eviction-runs: 10s   #响应等待时间
+  jackson:
+    default-property-inclusion: non_null # JSON处理时忽略非空字段
+  mail:   # 发送邮箱，这里绑定的是网易邮箱,仅用作发送邮件
+    host: smtp.163.com
+    username: cm_403630@163.com
+    password: BIJCCSKLLGLOYFVM
+mybatis-plus:
+  type-aliases-package: com.hmdp.entity # 别名扫描包
+logging:
+  level:      # 设置日志级别
+    com.hmdp: debug
