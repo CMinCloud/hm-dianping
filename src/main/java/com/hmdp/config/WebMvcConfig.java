@@ -22,10 +22,10 @@ public class WebMvcConfig implements WebMvcConfigurer {
     //    配置拦截器
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(loginInterceptor)
+        registry.addInterceptor(loginInterceptor)           //登录认证拦截器
                 .excludePathPatterns(               //放行拦截
                         "/shop/**",
-                        "voucher/**",
+                        "/voucher/**",
                         "/shop-type/**",
                         "/upload/**",
                         "/blog/hot",

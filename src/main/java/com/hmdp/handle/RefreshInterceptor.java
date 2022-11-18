@@ -27,7 +27,7 @@ public class RefreshInterceptor implements HandlerInterceptor {
     @Resource
     private StringRedisTemplate stringRedisTemplate;
 
-    //    拦截器，对需要用户认证的操作均进行拦截
+    //    拦截器，不对操作进行拦截，只是在用户进行操作时如果已登录则更新登录信息
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
 //        获取token
