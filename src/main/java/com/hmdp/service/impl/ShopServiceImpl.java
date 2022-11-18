@@ -1,5 +1,6 @@
 package com.hmdp.service.impl;
 
+import cn.hutool.core.util.BooleanUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import com.hmdp.dto.Result;
@@ -35,29 +36,70 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
 
     @Override
     public Result queryBYId(Long id) {
-//        1.查询redis，检查是否有缓存内容
-        String key = CACHE_SHOP_KEY + id;
-        String shopJson = template.opsForValue().get(key);  //获取商铺信息的json字符串
-//        2.如果有，直接返回
-        if(StrUtil.isNotBlank(shopJson)){      // 缓存命中了非空值
-            return Result.ok(JSONUtil.toBean(shopJson,Shop.class));
-        }
-//        判断命中的是否是空值：意思是缓存中存有值，不过是我们自己存入的空值 ""，说明数据库中暂时没有
-        if(shopJson != null){
-            return Result.fail("商铺不存在！");
-        }
-//        3.如果没有，进行查询数据库
-        Shop shop = getById(id);
-//        3.1 数据库中查询不到，返回报错
+        Shop shop = queryWithMutex(id);
         if(shop == null){
-//            解决缓存穿透：：：存入一个空值 ,有效期为2min
-            template.opsForValue().set(key,"",CACHE_NULL_TTL,TimeUnit.MINUTES);
-            return Result.fail("商铺不存在！！！");
+            return Result.fail("商铺不存在");
         }
-//        3.2 数据库中查询到了，缓存       （同时设置缓存时间， 减小更新数据库后删除缓存  错误影响）
-        template.opsForValue().set(key,JSONUtil.toJsonStr(shop),CACHE_SHOP_TTL, TimeUnit.MINUTES);
-//        4.返回
         return Result.ok(shop);
+    }
+
+    public Shop queryWithMutex(Long id)  {
+        String key = CACHE_SHOP_KEY + id;
+        // 1、从redis中查询商铺缓存
+        String shopJson = template.opsForValue().get(key);
+        // 2、判断是否存在
+        if (StrUtil.isNotBlank(shopJson)) {
+            // 存在,直接返回
+            return JSONUtil.toBean(shopJson, Shop.class);
+        }
+        //判断命中的值是否是空值
+        if (shopJson != null) {
+            //返回一个错误信息
+            return null;
+        }
+        // 4.实现缓存重构
+        //4.1 获取互斥锁
+        String lockKey = "lock:shop:" + id;
+        Shop shop = null;
+        try {
+            boolean isLock = tryLock(lockKey);
+            // 4.2 判断否获取成功
+            if(!isLock){
+                //4.3 失败，则休眠重试
+                Thread.sleep(50);
+                return queryWithMutex(id);
+            }
+            //4.4 成功，根据id查询数据库
+            shop = getById(id);
+            // 5.不存在，返回错误
+            if(shop == null){
+                //将空值写入redis
+                template.opsForValue().set(key,"",CACHE_NULL_TTL,TimeUnit.MINUTES);
+                //返回错误信息
+                return null;
+            }
+            //6.写入redis
+            template.opsForValue().set(key,JSONUtil.toJsonStr(shop),CACHE_NULL_TTL,TimeUnit.MINUTES);
+
+        }catch (Exception e){
+            throw new RuntimeException(e);
+        }
+        finally {
+            //7.释放互斥锁
+            unlock(lockKey);
+        }
+        return shop;
+    }
+
+//    使用  存入 redis缓存 来模拟上锁，其他线程必须等待
+    private boolean tryLock(String key) {
+        Boolean flag = template.opsForValue().setIfAbsent(key, "1", 10, TimeUnit.SECONDS);
+        return BooleanUtil.isTrue(flag);
+    }
+
+//    释放锁
+    private void unlock(String key) {
+        template.delete(key);
     }
 
     @Override
