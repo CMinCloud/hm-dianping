@@ -17,8 +17,7 @@ import javax.annotation.Resource;
 
 import java.util.concurrent.TimeUnit;
 
-import static com.hmdp.utils.RedisConstants.CACHE_SHOP_KEY;
-import static com.hmdp.utils.RedisConstants.CACHE_SHOP_TTL;
+import static com.hmdp.utils.RedisConstants.*;
 
 /**
  * <p>
@@ -40,14 +39,20 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         String key = CACHE_SHOP_KEY + id;
         String shopJson = template.opsForValue().get(key);  //获取商铺信息的json字符串
 //        2.如果有，直接返回
-        if(StrUtil.isNotBlank(shopJson)){
+        if(StrUtil.isNotBlank(shopJson)){      // 缓存命中了非空值
             return Result.ok(JSONUtil.toBean(shopJson,Shop.class));
+        }
+//        判断命中的是否是空值：意思是缓存中存有值，不过是我们自己存入的空值 ""，说明数据库中暂时没有
+        if(shopJson != null){
+            return Result.fail("商铺不存在！");
         }
 //        3.如果没有，进行查询数据库
         Shop shop = getById(id);
 //        3.1 数据库中查询不到，返回报错
         if(shop == null){
-            return Result.fail("商铺不存在");
+//            解决缓存穿透：：：存入一个空值 ,有效期为2min
+            template.opsForValue().set(key,"",CACHE_NULL_TTL,TimeUnit.MINUTES);
+            return Result.fail("商铺不存在！！！");
         }
 //        3.2 数据库中查询到了，缓存       （同时设置缓存时间， 减小更新数据库后删除缓存  错误影响）
         template.opsForValue().set(key,JSONUtil.toJsonStr(shop),CACHE_SHOP_TTL, TimeUnit.MINUTES);
