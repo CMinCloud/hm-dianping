@@ -9,9 +9,11 @@ import com.hmdp.entity.Shop;
 import com.hmdp.mapper.ShopMapper;
 import com.hmdp.service.IShopService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.hmdp.utils.CacheClient;
 import com.hmdp.utils.RedisConstants;
 import com.hmdp.utils.RedisData;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.annotation.Bean;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -24,6 +26,7 @@ import java.util.TimerTask;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 
 import static com.hmdp.utils.RedisConstants.*;
 
@@ -41,12 +44,24 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
     @Resource
     private StringRedisTemplate template;
 
+    @Resource
+    private CacheClient cacheClient;
+
     @Override
     public Result queryBYId(Long id) {
+//        使用缓存工具类来解决缓存穿透
+//        Shop shop = cacheClient.queryWithPassThrough(CACHE_SHOP_KEY, id, Shop.class, this::getById,
+//                CACHE_SHOP_TTL, TimeUnit.MINUTES);
+
 //        $$$使用互斥锁解决缓存击穿
 //        Shop shop = queryWithMutex(id);
+
 //        $$$使用逻辑过期来解决缓存击穿
-        Shop shop = queryWithLogicLock(id);
+//        Shop shop = queryWithLogicLock(id);
+
+//        使用缓存工具类 调用 逻辑过期方法来解决缓存击穿
+        Shop shop = cacheClient.queryWithLogicalLock(CACHE_SHOP_KEY, id, Shop.class, this::getById,
+                CACHE_SHOP_TTL, TimeUnit.MINUTES);
         if (shop == null) {
             return Result.fail("商铺不存在");
         }
@@ -101,13 +116,14 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
     }
 
 
-//    创建一个线程池用来在未命中缓存后 查询数据库
+    //    创建一个线程池用来在未命中缓存后 查询数据库
     private static final ExecutorService CACHE_REBUILD_EXECUTOR = Executors.newFixedThreadPool(10);
+
     public Shop queryWithLogicLock(Long id) {
         String jsonStr = template.opsForValue().get(CACHE_SHOP_KEY + id);
 //            1 判断缓存是否命中
         if (StrUtil.isBlank(jsonStr)) {
-            System.out.println("是否命中！"+StrUtil.isBlank(jsonStr));
+            System.out.println("是否命中！" + StrUtil.isBlank(jsonStr));
 //            1.1未命中
             return null;
         }
@@ -133,10 +149,10 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
             public void run() {
 //                重建缓存
                 try {
-                    saveShop2Redis(id,20L);  //设置20s方便测试
+                    saveShop2Redis(id, 20L);  //设置20s方便测试
                 } catch (Exception e) {
                     throw new RuntimeException(e);
-                }finally {
+                } finally {
                     //                释放锁
                     unlock(LockKey);
                 }
