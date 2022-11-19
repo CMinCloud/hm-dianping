@@ -59,7 +59,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         }
         // 4.实现缓存重构
         //4.1 获取互斥锁
-        String lockKey = "lock:shop:" + id;
+        String lockKey = LOCK_SHOP_KEY + id;
         Shop shop = null;
         try {
             boolean isLock = tryLock(lockKey);
@@ -79,7 +79,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
                 return null;
             }
             //6.写入redis
-            template.opsForValue().set(key,JSONUtil.toJsonStr(shop),CACHE_NULL_TTL,TimeUnit.MINUTES);
+            template.opsForValue().set(key,JSONUtil.toJsonStr(shop),CACHE_SHOP_TTL,TimeUnit.MINUTES);
 
         }catch (Exception e){
             throw new RuntimeException(e);
@@ -93,7 +93,7 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
 
 //    使用  存入 redis缓存 来模拟上锁，其他线程必须等待
     private boolean tryLock(String key) {
-        Boolean flag = template.opsForValue().setIfAbsent(key, "1", 10, TimeUnit.SECONDS);
+        Boolean flag = template.opsForValue().setIfAbsent(key, "1", LOCK_SHOP_TTL, TimeUnit.SECONDS);
         return BooleanUtil.isTrue(flag);
     }
 
@@ -111,7 +111,6 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         }
 //        1.更新数据库
         updateById(shop);
-
 //        2.清理缓存
         String key = CACHE_SHOP_KEY + id;
         template.delete(key);
