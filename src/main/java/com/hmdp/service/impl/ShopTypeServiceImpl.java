@@ -60,6 +60,7 @@ public class ShopTypeServiceImpl extends ServiceImpl<ShopTypeMapper, ShopType> i
                         ));
         template.opsForHash().putAll(CACHE_SHOP_TYPE_KEY+"hash",shopTypeMap);
         return Result.ok(list);*/
+//        使用String来缓存
         String jsonStr = template.opsForValue().get(CACHE_SHOP_TYPE_KEY);
         if(StrUtil.isNotBlank(jsonStr)){                //获取值不为空，直接返回缓存
             List<ShopType> list =  JSONUtil.toList(jsonStr,ShopType.class);
