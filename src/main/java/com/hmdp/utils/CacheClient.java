@@ -10,6 +10,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
+import javax.annotation.Resource;
 import java.time.LocalDateTime;
 import java.util.TimerTask;
 import java.util.concurrent.ExecutorService;
@@ -25,11 +26,12 @@ import static com.hmdp.utils.RedisConstants.*;
 @Component
 public class CacheClient {
 
-    private final StringRedisTemplate template;  //定义一个唯一的redis接口用于该工具类
+    @Resource
+    private  StringRedisTemplate template;  //定义一个唯一的redis接口用于该工具类
 
-    public CacheClient(StringRedisTemplate template) {
-        this.template = template;
-    }
+//    public CacheClient(StringRedisTemplate template) {
+//        this.template = template;
+//    }
 
     /**
      * 将任意Java对象序列化为json并存储再string类型的key中，并且可以设置TTL过期时间
@@ -120,7 +122,7 @@ public class CacheClient {
 //                    查询数据库
                     R newR = dbFallback.apply(id);
 //                    写入redis
-                    setWithLogicalExpire(key,newR,time,unit);
+                    setWithLogicalExpire(key, newR, time, unit);
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 } finally {
