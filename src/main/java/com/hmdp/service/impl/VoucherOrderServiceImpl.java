@@ -9,13 +9,16 @@ import com.hmdp.service.ISeckillVoucherService;
 import com.hmdp.service.IVoucherOrderService;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hmdp.utils.RedisIdWorker;
+import com.hmdp.utils.SimpleRedisLock;
 import com.hmdp.utils.UserHolder;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.aop.framework.AopContext;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import javax.annotation.Resource;
 import java.time.LocalDateTime;
 
 /**
@@ -35,7 +38,10 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     @Autowired
     private RedisIdWorker redisIdWorker;
 
-//    这个方法不用添加事务transactional了
+    @Resource
+    private StringRedisTemplate template;
+
+    //    这个方法不用添加事务transactional了
     @Override
     public Result seckillVoucher(Long voucherId) {
 //        1 查询优惠卷
@@ -57,13 +63,22 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
             return Result.fail("无库存剩余");
         }
         Long userId = UserHolder.getUser().getId();
-        synchronized (userId.toString().intern()) {    // 保证锁对象 唯一
+        SimpleRedisLock lock = new SimpleRedisLock("order:" + userId, template);   // 构建redis锁对象
+        boolean isLock = lock.tryLock(1200);    //设置过期时间，定期释放锁
+        if (!isLock) {
+            return Result.fail("不允许重复下单");
+        }
+
+        try {
+            // 保证锁对象 唯一
             /**
              *    !!! 使用Transactional注解管理事务需要获取当前的代理对象，而直接调用本类内部的方法不受spring管理
              *    所以事务不生效,需要自己调用自己的代理对象才行!!!
              */
             IVoucherOrderService currentProxy = (IVoucherOrderService) AopContext.currentProxy();   // 获取代理事务
             return currentProxy.createVoucherOrder(voucherId);          // 事务提交之后才释放锁
+        } finally {
+            lock.unlcok();
         }
     }
 
@@ -99,5 +114,4 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 //        5 返回订单id
         return Result.ok(orderId);
     }
-
 }
