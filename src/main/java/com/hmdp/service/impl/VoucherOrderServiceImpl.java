@@ -63,7 +63,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
             return Result.fail("无库存剩余");
         }
         Long userId = UserHolder.getUser().getId();
-        SimpleRedisLock lock = new SimpleRedisLock("order:" + userId, template);   // 构建redis锁对象
+        SimpleRedisLock lock = new SimpleRedisLock("order:" + userId, template);   // 构建redis锁对象,锁对象为userId
         boolean isLock = lock.tryLock(1200);    //设置过期时间，定期释放锁
         if (!isLock) {
             return Result.fail("不允许重复下单");
