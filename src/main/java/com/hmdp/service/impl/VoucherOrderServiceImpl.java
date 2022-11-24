@@ -15,6 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.jetbrains.annotations.NotNull;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.aop.framework.AopContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ClassPathResource;
@@ -60,6 +61,13 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 
     private static final DefaultRedisScript<Long> SECKILL_LOCK;  //定义lua脚本对象
 
+    /**
+     * 在进行业务操作时发送mq消息
+     */
+    @Resource
+    private RabbitTemplate rabbitTemplate;
+
+
 
     static {
         SECKILL_LOCK = new DefaultRedisScript<>();
@@ -86,7 +94,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
             while (true) {
                 try {
 //                    1.获取阻塞队列中的订单信息  (没有则阻塞在此,所以while不影响内存)
-                    VoucherOrder voucherOrder = orderTasks.take();
+                    VoucherOrder voucherOrder = orderTasks.take();    // 当主线程中add了，这里就会take然后从阻塞中恢复开始运行
 //                    2.创建订单
                     handleVoucherOrder(voucherOrder);
                 } catch (InterruptedException e) {
@@ -102,7 +110,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
         Long userId = voucherOrder.getUserId();
         RLock lock = redissonClient.getLock("lock:order:" + userId);
 //        获取锁对象
-        boolean isLock = lock.tryLock();    //使用redisson的锁来
+        boolean isLock = lock.tryLock();    //使用redisson的锁来进行上锁操作
         if (!isLock) {
             log.error("不允许重复下单");
         }
@@ -110,7 +118,6 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
             // 保证锁对象 唯一
 //                !!! 使用Transactional注解管理事务需要获取当前的代理对象，而直接调用本类内部的方法不受spring管理
 //                所以事务不生效,需要自己调用自己的代理对象才行!!!
-
 //           // 获取代理事务, 下订单
             currentProxy.createVoucherOrder(voucherOrder);          // 事务提交之后才释放锁
         } finally {
@@ -199,7 +206,6 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     }
 
     public void createVoucherOrder(VoucherOrder voucherOrder) {
-
         Long userId = voucherOrder.getUserId();
         Long voucherId = voucherOrder.getVoucherId();
 //        对用户 新增操作设置锁 ， 防止黄牛刷票
@@ -224,7 +230,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 
     //    使用lua脚本，异步实现 秒杀下单业务
     public Result seckillVoucher(Long voucherId) {
-//        1.执行lua脚本
+//        1.执行lua脚本：将 下单条件的判定和存入缓存 与 实际的数据库下单分离开来
         Long result = template.execute(
                 SECKILL_LOCK,
                 Collections.emptyList(),
@@ -247,6 +253,39 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 //        对代理对象初始化,之后在方法中就可以调用
         currentProxy = (IVoucherOrderService) AopContext.currentProxy();
         orderTasks.add(voucherOrder);
+        return Result.ok(orderId);
+    }
+
+
+    /**
+     * 使用mq来实现消息的异步处理
+     */
+    public Result seckillVoucherByRabbitMq(Long voucherId){
+//        1.执行lua脚本：将 下单条件的判定和存入缓存 与 实际的数据库下单分离开来
+        Long result = template.execute(
+                SECKILL_LOCK,
+                Collections.emptyList(),
+                voucherId.toString(), UserHolder.getUser().toString()
+        );
+//        2.判断结果是为0 ，可以下单
+        int r = result.intValue();
+        if (r != 0) {
+//        2.1. 不为0，代表没有购买资格
+            return Result.fail(r == 1 ? "库存不足" : "不允许重复下单");
+        }
+//        2.2. 为0，有购买资格，把下单信息保存到阻塞队列
+//        2.3准备订单,保存到阻塞队列
+        long orderId = redisIdWorker.nextId("order");
+        VoucherOrder voucherOrder = new VoucherOrder();
+        voucherOrder.setId(orderId);  //订单id
+        voucherOrder.setUserId(UserHolder.getUser().getId());   //用户id
+        voucherOrder.setVoucherId(voucherId);
+//        2.4 存放到阻塞队列中去处理
+//        对代理对象初始化,之后在方法中就可以调用
+//        currentProxy = (IVoucherOrderService) AopContext.currentProxy();
+//        orderTasks.add(voucherOrder);
+//        生产者发布消息（需要发送的参数：voucherOrder）
+        rabbitTemplate.convertAndSend("DIANPING_EXCHANGE","voucher_order",voucherOrder);
         return Result.ok(orderId);
     }
 }

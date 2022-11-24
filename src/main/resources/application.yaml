@@ -8,6 +8,14 @@ spring:
     url: jdbc:mysql://127.0.0.1:3306/remark_db?useSSL=false&serverTimezone=UTC
     username: root
     password: 403630
+#    配置mq
+  rabbitmq:
+    port: 5672
+    host: 47.109.59.20
+    virtual-host: / # 虚拟主机
+    username: cm # 用户名
+    password: 403630 # 密码
+#    配置redis
   redis:
     host: 47.109.59.20
     port: 6379
