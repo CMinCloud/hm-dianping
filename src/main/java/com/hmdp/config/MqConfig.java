@@ -26,11 +26,23 @@ public class MqConfig {
         return new Queue("voucherOrder_queue");
     }
 
+    @Bean
+    public Queue voucherOrderQueue2() {
+        return new Queue("voucherOrder_queue2");
+    }
+
     //    将队列绑定到交换机上，使用topic连接方式，设置RoutingKey
 
     @Bean                                   // 使用自动装配填入形参
-    public Binding BindingInsesrtQueue(Queue voucherOrderQueue, TopicExchange topicExchange) {
+    public Binding BindingInsertQueue(Queue voucherOrderQueue, TopicExchange topicExchange) {
+//        满足对应的key才会将消息发送给 对应的queue
         return BindingBuilder.bind(voucherOrderQueue).to(topicExchange).with("voucher_order");
+    }
+
+    @Bean                                   // 使用自动装配填入形参
+    public Binding BindingInsertQueue2(Queue voucherOrderQueue2, TopicExchange topicExchange) {
+//        满足对应的key才会将消息发送给 对应的queue
+        return BindingBuilder.bind(voucherOrderQueue2).to(topicExchange).with("voucher_order");
     }
 
 }

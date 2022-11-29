@@ -68,7 +68,6 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     private RabbitTemplate rabbitTemplate;
 
 
-
     static {
         SECKILL_LOCK = new DefaultRedisScript<>();
         SECKILL_LOCK.setLocation(new ClassPathResource("seckill.lua"));   // 脚本文件
@@ -260,7 +259,7 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
     /**
      * 使用mq来实现消息的异步处理
      */
-    public Result seckillVoucherByRabbitMq(Long voucherId){
+    public Result seckillVoucherByRabbitMq(Long voucherId) {
 //        1.执行lua脚本：将 下单条件的判定和存入缓存 与 实际的数据库下单分离开来
         Long result = template.execute(
                 SECKILL_LOCK,
@@ -284,8 +283,8 @@ public class VoucherOrderServiceImpl extends ServiceImpl<VoucherOrderMapper, Vou
 //        对代理对象初始化,之后在方法中就可以调用
 //        currentProxy = (IVoucherOrderService) AopContext.currentProxy();
 //        orderTasks.add(voucherOrder);
-//        生产者发布消息（需要发送的参数：voucherOrder）
-        rabbitTemplate.convertAndSend("DIANPING_EXCHANGE","voucher_order",voucherOrder);
+//        生产者发布消息                   （交换机名称，路由key，发送的参数）
+        rabbitTemplate.convertAndSend("DIANPING_EXCHANGE", "voucher_order", voucherOrder);
         return Result.ok(orderId);
     }
 }
