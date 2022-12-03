@@ -196,54 +196,55 @@ public class ShopServiceImpl extends ServiceImpl<ShopMapper, Shop> implements IS
         return Result.ok();
     }
 
-//    根据商户类型来查询商户信息(可以根据经纬度进行查询)
+    //    根据商户类型来查询商户信息(可以根据经纬度进行查询)
     @Override
     public Result queryShopByType(Integer typeId, Integer current, Double x, Double y) {
 //        1.判断是否需要根据坐标查询
         if (x == null || y == null) {
             // 不需要坐标查询，按数据库查询
-            Page<Shop> page = query()
-                    .eq("type_id", typeId)
+            Page<Shop> page = query().eq("type_id", typeId)
                     .page(new Page<>(current, SystemConstants.DEFAULT_PAGE_SIZE));
             // 返回数据
             return Result.ok(page.getRecords());
         }
-        // 2.计算分页参数
+        // 2.传入了坐标，需要计算分页参数
         int from = (current - 1) * SystemConstants.DEFAULT_PAGE_SIZE;
         int end = current * SystemConstants.DEFAULT_PAGE_SIZE;
-
         // 3.查询redis、按照距离排序、分页。结果：shopId、distance
         String key = SHOP_GEO_KEY + typeId;
-        GeoResults<RedisGeoCommands.GeoLocation<String>> results = template.opsForGeo() // GEOSEARCH key BYLONLAT x y BYRADIUS 10 WITHDISTANCE
-                .search(
-                        key,
-                        GeoReference.fromCoordinate(x, y),              // 中心点坐标（在实际业务中为自己手机的坐标）
-                        new Distance(5000),
-                        RedisGeoCommands.GeoSearchCommandArgs.newGeoSearchArgs().includeDistance().limit(end)
-                );
-        // 4.解析出id
+//        从redis中一次性获取所有shop的 geo信息
+//        再根据逻辑排序，按距离远近从数据库中获取商铺集合(那之前的逻辑缓存不是缓存了个寂寞？)
+        GeoResults<RedisGeoCommands.GeoLocation<String>> results = template.opsForGeo().search(    // GEOSEARCH key BYLONLAT x y BYRADIUS 10 WITHDISTANCE
+                key,
+                GeoReference.fromCoordinate(x, y),   //中心坐标
+                new Distance(5000),   //搜索范围
+                //表示截取长度，从第0条到end位置（不能从中间开始截取。。。）
+                RedisGeoCommands.GeoSearchCommandArgs.newGeoSearchArgs().includeDistance().limit(end)
+        );
+        // 4.解析出id存入list，用来数据库查询
         if (results == null) {
-            return Result.ok(Collections.emptyList());
+            return Result.ok(Collections.emptyList());   //redis中无数据，返回空集
         }
+//        获取结果list
         List<GeoResult<RedisGeoCommands.GeoLocation<String>>> list = results.getContent();
-        if (list.size() <= from) {
-            // 没有下一页了，结束
+        if(list.size() <= from){            // 没有下一页了结束:  不然下面skip根据页码分页后第一条数据被跳过了，也返回空集
             return Result.ok(Collections.emptyList());
         }
         // 4.1.截取 from ~ end的部分
         List<Long> ids = new ArrayList<>(list.size());
-        Map<String, Distance> distanceMap = new HashMap<>(list.size());
-        list.stream().skip(from).forEach(result -> {
+        Map<String,Distance> distanceMap = new HashMap<>(list.size());  //记录每个shop到中心点的距离
+        list.stream().skip(from).forEach(result->{  //从from开始截取
             // 4.2.获取店铺id
             String shopIdStr = result.getContent().getName();
             ids.add(Long.valueOf(shopIdStr));
             // 4.3.获取距离
             Distance distance = result.getDistance();
-            distanceMap.put(shopIdStr, distance);
+            distanceMap.put(shopIdStr,distance);
         });
         // 5.根据id查询Shop
-        String idStr = StrUtil.join(",", ids);
-        List<Shop> shops = query().in("id", ids).last("ORDER BY FIELD(id," + idStr + ")").list();
+        String idStr = StrUtil.join(",", ids);     //  拼接为id字符串，sql按照字符串排序
+        List<Shop> shops = query().in("id", ids)
+                .last("ORDER BY FIELD(id," + idStr + ")").list();
         for (Shop shop : shops) {
             shop.setDistance(distanceMap.get(shop.getId().toString()).getValue());
         }

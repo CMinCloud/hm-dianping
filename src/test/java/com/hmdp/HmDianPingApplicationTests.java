@@ -1,6 +1,7 @@
 package com.hmdp;
 
 import com.hmdp.entity.Shop;
+import com.hmdp.service.IUserService;
 import com.hmdp.service.impl.ShopServiceImpl;
 import com.hmdp.utils.CacheClient;
 import com.hmdp.utils.RedisIdWorker;
@@ -32,6 +33,9 @@ class HmDianPingApplicationTests {
     @Autowired
     private ShopServiceImpl shopService;
 
+    @Autowired
+    private IUserService userService;
+
     @Resource
     private CacheClient cacheClient;
 
@@ -41,7 +45,7 @@ class HmDianPingApplicationTests {
     @Autowired
     private RedissonClient redissonClient;
 
-    @Autowired
+    @Resource
     private StringRedisTemplate template;
 
     @Test
@@ -141,5 +145,11 @@ class HmDianPingApplicationTests {
 //            写入redis
             template.opsForGeo().add(key, locations);
         }
+    }
+
+
+    @Test
+    void testSign(){
+        userService.sign();
     }
 }
